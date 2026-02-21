@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <base href="https://cdn.jsdelivr.net/gh/arcade-v/gamemaker/deltarune/chapter4/">
+    <script>
+      // better debugging for me
+      const ogalert = window.alert;
+      window.alert = function(message) {
+        ogalert(document.querySelector('base')?.href.split("https://cdn.jsdelivr.net/gh/genizy/web-port@")[1]+"\n"+message)
+      };
+    </script>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0" />
+    <link rel="icon" type="x-icon" href="favicon.png">
+    <title>Deltarune Chapter 4</title>
+    <style>
+      /* rotation keyframes unchanged */
+      @keyframes rotation {
+        from {transform: rotate(0deg);}
+        to {transform: rotate(360deg);}
+      }
+
+      html {
+        background: #000;
+        height: 100%;
+      }
+
+      body {
+        font-family: arial;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: black;
+        overflow: hidden;
+      }
+
+      .aspect-wrapper {
+        aspect-ratio: 4 / 3;
+        width: 100vw;
+        max-height: 100vh;
+        background: black;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+      }
+
+      canvas.emscripten {
+        display: block;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        image-rendering: pixelated;
+      }
+
+      /* other original styles: spinner, pause menu, etc. */
+      .spinner {
+        height: 30px;
+        width: 30px;
+        animation: rotation 0.8s linear infinite;
+        border: 5px solid #bdff00;
+        border-top: 5px solid #719900;
+        border-radius: 100%;
+      }
+
+      #status {
+        display: inline-block;
+        vertical-align: top;
+        font-weight: bold;
+        color: white;
+      }
+
+      #progress {
+        width: 250px;
+        height: 10px;
+        appearance: none;
+        padding: 5px;
+      }
+
+      progress[value]::-webkit-progress-bar {
+        background-color: #8492a6;
+        height: 10px;
+        border-radius: 15px;
+      }
+
+      progress[value]::-webkit-progress-value {
+        background-image: -webkit-linear-gradient(left, #719900, #bdff00);
+        height: 10px;
+        border-radius: 15px;
+      }
+
+      div.loading {
+        position: absolute;
+        top: 0; bottom: 0; left: 0; right: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        pointer-events: none;
+      }
+
+      div.loading > * {
+        padding: 10px;
+        margin: 10px;
+      }
+
+      #pauseMenuContainer {
+        position: absolute;
+        top: 0; bottom: 0; left: 0; right: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #pauseMenuContainer[hidden] {
+        display: none !important;
+        opacity: 0;
+      }
+
+      #pauseMenuBorder {
+        background: linear-gradient(135deg, #FA1E4E, transparent 40%);
+        padding: 1px;
+        border-radius: 4px;
+        clip-path: polygon(10.5px 0, 100% 0, 100% 100%, 0 100%, 0 10.5px);
+        width: 70vw;
+        max-width: 400px;
+      }
+
+      #pauseMenu {
+        display: flex;
+        flex-direction: column;
+        padding: 60px 30px;
+        background: linear-gradient(180deg, #2E273F 16.15%, rgba(46, 39, 63, 0.79) 56.25%, #2E273F 91.15%);
+        border-radius: 4px;
+        clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+        animation-name: fadeIn;
+        animation-duration: 0.5s;
+        opacity: 1;
+      }
+
+      #pauseMenu button {
+        font-weight: 500;
+        font-size: 17px;
+        color: white;
+        background: #FA1E4E;
+        border: 1px solid #FA1E4E;
+        border-radius: 6px;
+        padding: 12px 24px;
+        margin: 5px 0;
+        user-select: none;
+      }
+
+      #pauseMenu button#quitButton {
+        background: #FA1E4E40;
+      }
+
+      #pauseMenu button:hover {
+        filter: brightness(1.15);
+      }
+
+      #pauseMenu button:active {
+        filter: brightness(0.85);
+      }
+
+      #pauseMenu button[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="aspect-wrapper">
+      <canvas
+        class="emscripten"
+        id="canvas"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1">
+      </canvas>
+
+      <div id="pauseMenuContainer" hidden>
+        <div id="pauseMenuBorder">
+          <div id="pauseMenu">
+            <button id="resumeButton" onclick="resume()">Resume</button>
+            <button id="quitButton" onclick="quitIfSupported()">Quit</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="loading">
+        <div class="spinner" id="spinner"></div>
+        <div class="emscripten" id="status">Downloading...</div>
+        <progress value="0" max="100" id="progress" hidden="1"></progress>
+      </div>
+
+      <div id="message-container">
+        <div id="messages"></div>
+      </div>
+    </div>
+<script>
+  const canvas = document.getElementById('canvas');
+
+  // Make sure canvas can get focus
+  canvas.setAttribute('tabindex', '0');
+
+  // Focus canvas automatically on load
+  window.addEventListener('load', () => {
+    canvas.focus();
+  });
+
+  // Also refocus canvas on click
+  canvas.addEventListener('click', () => {
+    canvas.focus();
+  });
+
+  // (Optional) Forward key events to canvas manually
+  window.addEventListener('keydown', e => {
+    if (!document.activeElement || document.activeElement !== canvas) {
+      canvas.focus();
+    }
+  });
+</script>
+
+    <!-- Loader logic unchanged -->
+    <script type="text/javascript">
+      function mergeFiles(fileParts) {
+        return new Promise((resolve, reject) => {
+          let buffers = [];
+          function fetchPart(index) {
+            if (index >= fileParts.length) {
+              let mergedBlob = new Blob(buffers);
+              let mergedFileUrl = URL.createObjectURL(mergedBlob);
+              resolve(mergedFileUrl);
+              return;
+            }
+            fetch(fileParts[index]).then(r => r.arrayBuffer()).then(data => {
+              buffers.push(data);
+              fetchPart(index + 1);
+            }).catch(reject);
+          }
+          fetchPart(0);
+        });
+      }
+
+      function getParts(file, start, end) {
+        let parts = [];
+        for (let i = start; i <= end; i++) {
+          parts.push(file + ".part" + i);
+        }
+        return parts;
+      }
+
+      Promise.all([
+        mergeFiles(getParts("game.unx", 1, 8)),
+        mergeFiles(getParts("runner.data", 1, 2))
+      ]).then(([gameunx, runnerdata]) => {
+        window.gameUnxUrl = gameunx;
+        const originalFetch = window.fetch;
+        window.fetch = async function (url, ...args) {
+          if (url.endsWith("game.unx")) {
+            return originalFetch(gameunx, ...args);
+          } else if (url.endsWith("runner.data")) {
+            return originalFetch(runnerdata, ...args);
+          } else {
+            return originalFetch(url, ...args);
+          }
+        };
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+          if (url.includes("game.unx")) {
+            url = window.gameUnxUrl;
+          } else if (url.includes("runner.data")) {
+            url = runnerdata;
+          }
+          return originalOpen.call(this, method, url, ...rest);
+        };
+        let index = document.createElement("script");
+        index.src = "index.js";
+        document.body.appendChild(index);
+        let runner = document.createElement("script");
+        runner.src = "runner.js";
+        document.body.appendChild(runner);
+      }).catch(error => {
+        console.error("Failed to merge files:", error);
+      });
+    </script>
+  </body>
+</html>
