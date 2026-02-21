@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <base href="https://cdn.jsdelivr.net/gh/FutureElliotto/web-port-arcade-4/deltarune/chapter3/">
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0" />
+  <link rel="icon" type="x-icon" href="favicon.png">
+  <title>Deltarune Chapter 3</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: black;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas.emscripten {
+      display: block;
+      background-color: black;
+      image-rendering: pixelated;
+    }
+
+    /* Spinner & loading */
+    .spinner {
+      height: 30px;
+      width: 30px;
+      border: 5px solid #bdff00;
+      border-top: 5px solid #719900;
+      border-radius: 100%;
+      animation: rotation 0.8s linear infinite;
+    }
+    @keyframes rotation { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    div.loading {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      pointer-events: none;
+    }
+    div.loading > * { margin: 10px; }
+
+    #pauseMenuContainer { position: absolute; top:0; left:0; right:0; bottom:0; display:flex; justify-content:center; align-items:center; }
+    #pauseMenuContainer[hidden] { display:none !important; }
+  </style>
+</head>
+<body>
+
+<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="0"></canvas>
+
+<div id="pauseMenuContainer" hidden>
+  <div id="pauseMenuBorder">
+    <div id="pauseMenu">
+      <button id="resumeButton" onclick="resume()">Resume</button>
+      <button id="quitButton" onclick="quitIfSupported()">Quit</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading">
+  <div class="spinner" id="spinner"></div>
+  <div class="emscripten" id="status">Downloading...</div>
+  <progress value="0" max="100" id="progress" hidden></progress>
+</div>
+
+<script>
+  const canvas = document.getElementById('canvas');
+
+  // Focus canvas for keyboard input
+  function focusCanvas() {
+    canvas.focus({preventScroll:true});
+  }
+  window.addEventListener('load', focusCanvas);
+  canvas.addEventListener('click', focusCanvas);
+  window.addEventListener('keydown', (e) => { if(document.activeElement !== canvas) focusCanvas(); });
+
+  // Strict 4:3 aspect ratio
+  function resizeCanvas() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    let width = w;
+    let height = w * 3 / 4;
+    if(height > h){ height = h; width = h * 4 / 3; }
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // Merge game files
+  function mergeFiles(fileParts) {
+    return new Promise((resolve, reject) => {
+      let buffers = [];
+      function fetchPart(index) {
+        if(index >= fileParts.length){
+          let mergedBlob = new Blob(buffers);
+          let mergedFileUrl = URL.createObjectURL(mergedBlob);
+          resolve(mergedFileUrl); return;
+        }
+        fetch(fileParts[index])
+          .then(r => r.arrayBuffer())
+          .then(data => { buffers.push(data); fetchPart(index+1); })
+          .catch(reject);
+      }
+      fetchPart(0);
+    });
+  }
+  function getParts(file, start, end){
+    let parts = [];
+    for(let i=start;i<=end;i++) parts.push(file+".part"+i);
+    return parts;
+  }
+
+  Promise.all([
+    mergeFiles(getParts("game.unx",1,8)),
+    mergeFiles(getParts("runner.data",1,2))
+  ]).then(([gameunx, runnerdata]) => {
+    window.gameUnxUrl = gameunx;
+    const origFetch = window.fetch;
+    window.fetch = async (url,...args) => {
+      if(url.endsWith("game.unx")) return origFetch(gameunx,...args);
+      if(url.endsWith("runner.data")) return origFetch(runnerdata,...args);
+      return origFetch(url,...args);
+    };
+    const origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method,url,...rest){
+      if(url.includes("game.unx")) url = window.gameUnxUrl;
+      if(url.includes("runner.data")) url = runnerdata;
+      return origOpen.call(this, method, url,...rest);
+    };
+    // Load game scripts
+    let index = document.createElement("script"); index.src="index.js"; document.body.appendChild(index);
+    let runner = document.createElement("script"); runner.src="runner.js"; document.body.appendChild(runner);
+  }).catch(err => console.error("Failed to merge files:",err));
+
+  // Optional: Video fallback for GM
+  const origLog = console.log;
+  console.log = function(...args){
+    origLog.apply(console,args);
+    const msg = args.join(' ');
+    if(msg.includes("Videos dont work on gamemaker web export. - breadbb")){
+      GM_pause();
+      const video = document.createElement("video");
+      video.src="vid/tennaintrof1_compressed_28.mp4";
+      video.style.position="absolute";
+      video.style.top="0"; video.style.left="0";
+      video.style.width="100vw"; video.style.height="100vh";
+      video.style.objectFit="cover"; video.style.zIndex="9999";
+      video.autoplay=true; video.controls=false; video.muted=false; video.playsInline=true;
+      document.body.appendChild(video);
+      video.addEventListener("ended",()=>{document.body.removeChild(video); resume();});
+    }
+  };
+</script>
+</body>
+</html>
